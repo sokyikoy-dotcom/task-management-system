@@ -1,0 +1,16 @@
+# Replace myproject.site with your real domain in the production config before deploying.
+services:
+  nginx:
+    profiles:
+      - production
+
+  frontend:
+    build:
+      args:
+        VITE_API_URL: http://localhost:5000
+    ports:
+      - "8081:80"
+
+  backend:
+    ports:
+      - "5000:5000"
