@@ -95,20 +95,62 @@ MongoDB data is stored in the `mongo_data` Docker volume and remains available a
 
 Example files are provided at `backend/.env.example` and `frontend/.env.example`. Docker Compose supplies the backend values and sets the frontend URL through its build argument. The local Compose override uses `http://localhost:5000`.
 
-## AWS deployment overview
+## AWS deployment guide
 
-1. Choose a domain and create DNS records in Route 53 (or your DNS provider) for `frontend.your-domain.example`, `api.your-domain.example`, and `backend.your-domain.example`.
-2. Deploy the Docker Compose stack on an EC2 instance, or run the containers in an AWS container service. Keep MongoDB data on persistent storage; for production, consider Amazon DocumentDB or a managed MongoDB service.
-3. Configure an Application Load Balancer with an ACM TLS certificate and forward traffic to the Nginx service. The included Nginx config routes the frontend hostname to the frontend container and both API hostnames to the backend.
-4. Before building the frontend for production, set `VITE_API_URL` to `https://api.your-domain.example`. Vite embeds this value at build time.
-5. Replace the sample `myproject.site` hostnames in `nginx/default.conf` and the production frontend build argument in `docker-compose.yml` with your domain values. The frontend server block accepts both the root domain and `frontend.myproject.site`.
-6. Verify the deployment at the live app and API URLs, and restrict database access to the application network.
+1. **Launch an EC2 instance.** Select Ubuntu Server 24.04 LTS, instance type `t3.small`, and a 20 GiB EBS root volume.
+2. **Create and select a key pair.** Download and securely keep the private key; use it to connect to the instance over SSH.
+3. **Configure the security group.** Allow inbound TCP ports 22 (SSH), 80 (HTTP), and 443 (HTTPS). Restrict SSH to your own IP address where possible.
+4. **Allocate an Elastic IP** and associate it with the instance. Use this stable address for the DNS names and deployment configuration.
+5. **Connect to the instance and install Docker and Git:**
 
-Live links (replace these placeholders after deployment):
+   ```bash
+   sudo apt update
+   sudo apt install -y docker.io docker-compose-v2 git
+   sudo systemctl enable --now docker
+   sudo usermod -aG docker "$USER"
+   newgrp docker
+   ```
 
-- [Frontend](https://frontend.your-domain.example)
-- [API](https://api.your-domain.example)
-- [Backend alias](https://backend.your-domain.example)
+6. **Clone the repository:**
+
+   ```bash
+   git clone https://github.com/sokyikoy-dotcom/task-management-system.git
+   cd task-management-system
+   ```
+
+7. **Set the Elastic IP as the deployment hostname.** Set `ELASTIC_IP` to the address you associated with the instance, then replace the sample hostname in Nginx and the Compose configuration:
+
+   ```bash
+   ELASTIC_IP=52.63.241.68
+   sed -i "s/myproject.site/${ELASTIC_IP}.nip.io/g" nginx/default.conf docker-compose.yml
+   ```
+
+   Replace the example address with your Elastic IP if it differs.
+
+8. **Build and start the services** from the repository root:
+
+   ```bash
+   docker compose up -d --build
+   ```
+
+   Check the containers with `docker compose ps` and review startup output with `docker compose logs`.
+
+`nip.io` is a free wildcard DNS service: `<ip>.nip.io` and its subdomains resolve to that IP address. This lets the app use hostnames for the frontend, API, and backend without purchasing a domain.
+
+Live links:
+
+- [Frontend](http://52.63.241.68.nip.io)
+- [Backend health check](http://backend.52.63.241.68.nip.io/health)
+- [API tasks](http://api.52.63.241.68.nip.io/api/tasks)
+
+HTTPS can be added later with Certbot or Caddy.
+
+## Challenges and solutions
+
+- **Small disk:** The initial EBS volume was too small, so it was resized to 20 GiB.
+- **Not enough RAM on `t3.micro`:** The instance was upgraded to `t3.small` and swap was added to provide additional memory headroom.
+- **Changing public IP:** An Elastic IP keeps the address stable across instance stops and starts.
+- **Frontend API URL changes:** `VITE_API_URL` is embedded when Vite builds the frontend. Rebuild the frontend after changing it so the deployed app uses the new API URL.
 
 ## Troubleshooting
 
